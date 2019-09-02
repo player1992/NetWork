@@ -1,6 +1,5 @@
 package com.leo.retrofit.basic;
 
-import com.jakewharton.retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory;
 import com.leo.retrofit.GitHubService;
 import com.leo.retrofit.bean.Game;
 import com.leo.retrofit.bean.Repo;
@@ -17,6 +16,7 @@ import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Response;
 import retrofit2.Retrofit;
+import retrofit2.adapter.rxjava.RxJavaCallAdapterFactory;
 import retrofit2.converter.gson.GsonConverterFactory;
 
 /**
@@ -122,7 +122,7 @@ public class Demo {
         Retrofit retrofit = new Retrofit.Builder()
                 .baseUrl("http://api.avatardata.cn/Nba/")
                 //需要告诉Retrofit是RxJava2的版本
-                .addCallAdapterFactory(RxJava2CallAdapterFactory.create())
+                .addCallAdapterFactory(RxJavaCallAdapterFactory.create())
                 .addConverterFactory(GsonConverterFactory.create())
                 .build();
 
