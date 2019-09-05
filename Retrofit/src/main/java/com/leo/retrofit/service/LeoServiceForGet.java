@@ -1,30 +1,22 @@
-### Retrofit
+package com.leo.retrofit.service;
 
+import com.leo.retrofit.bean.Leo;
 
+import java.util.Map;
 
-### 一、注解分类
+import retrofit2.Call;
+import retrofit2.http.GET;
+import retrofit2.http.Header;
+import retrofit2.http.Headers;
+import retrofit2.http.Path;
+import retrofit2.http.Query;
+import retrofit2.http.QueryMap;
 
-
-
-#### 1.请求方法注解
-
-`DELETE`,`GET`,`POST`,`PUT`,`HEAD`,`PATCH`,`OPTIONS`,`HTTP`
-
-HTTP特殊，可以替换其他七种。
-
-#### 2.标记注解
-
-`FormUrlEncoded`、`Multipart`、`Streaming`
-
-#### 3.参数注解
-
-`Path`、`Header`、`HeaderMap`、`Headers`、`Query`、`QueryMap`、`Body`、`Field`、`FieldMap`、`Part`、`PartMap`等
-
-### 二、基本使用
-
-定义API接口
-
-```java
+/**
+ * <p>Date:2019-09-03.09:56</p>
+ * <p>Author:niu bao</p>
+ * <p>Desc:API</p>
+ */
 public interface LeoServiceForGet {
     @GET("get/getUser?id=leo")
     Call<Leo> getUserInfo();
@@ -39,16 +31,7 @@ public interface LeoServiceForGet {
     //单个Header动态添加
     Call<Leo> getUserInfoWithQueryMap(@QueryMap Map<String,String> options,@Header("Location") String loacation);
 
+
     @GET("{apiPath}/getUser?id=leo")//{apiPath}的值要动态替换，由传入的值替换
     Call<Leo> getUserInfoWithPath(@Path("apiPath") String path);
 }
-```
-
-创建Retrofit实例
-
-```java
-Retrofit retrofit = new Retrofit.Builder()
-        .baseUrl(url)
-        .addConverterFactory(GsonConverterFactory.create())
-        .build();
-```

@@ -1,11 +1,11 @@
-package com.leo.retrofit.packing;
+package com.leo.retrofit.demo;
 
 
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.OkHttpClient;
 import retrofit2.Retrofit;
-import retrofit2.adapter.rxjava.RxJavaCallAdapterFactory;
+import retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory;
 import retrofit2.converter.gson.GsonConverterFactory;
 
 /**
@@ -19,6 +19,7 @@ public class RetrofitServiceManager {
     private static final int DEFAULT_READ_TIME_OUT = 10;
 
     private Retrofit mRetrofit;
+
 
     private RetrofitServiceManager() {
         OkHttpClient.Builder builder = new OkHttpClient.Builder();
@@ -34,7 +35,7 @@ public class RetrofitServiceManager {
         mRetrofit = new Retrofit.Builder()
                 .baseUrl("http://api.avatardata.cn/Nba/")
                 .client(builder.build())
-                .addCallAdapterFactory(RxJavaCallAdapterFactory.create())
+                .addCallAdapterFactory(RxJava2CallAdapterFactory.create())
                 .addConverterFactory(GsonConverterFactory.create())
                 .build();
     }
