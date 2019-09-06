@@ -4,6 +4,7 @@ import com.leo.retrofit.bean.Leo;
 
 import java.util.Map;
 
+import io.reactivex.Observable;
 import retrofit2.Call;
 import retrofit2.http.GET;
 import retrofit2.http.Header;
@@ -20,6 +21,9 @@ import retrofit2.http.QueryMap;
 public interface LeoServiceForGet {
     @GET("get/getUser?id=leo")
     Call<Leo> getUserInfo();
+
+    @GET("get/getUser?id=leo")
+    Observable<Leo> getUserInfoRx();
 
     @GET("get/getUser")//请求入参可以由Query注解指定，参数传入即可
     @Headers({

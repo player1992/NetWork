@@ -3,6 +3,7 @@ package com.leo.retrofit.service;
 import com.leo.retrofit.bean.Id;
 import com.leo.retrofit.bean.Leo;
 
+import okhttp3.ResponseBody;
 import retrofit2.Call;
 import retrofit2.http.Body;
 import retrofit2.http.Field;
@@ -20,6 +21,10 @@ public interface LeoServiceForPost {
     @POST("post/getUser")
     //Field必须和FormUrlEncoded一起使用，表名是一次表单提交
     Call<Leo> getUserInfo(@Field("id") String id);
+
+    @FormUrlEncoded
+    @POST("post/getUser")//如果不设置Gson的转换器，返回值只能是ResponseBody或者Void，
+    Call<ResponseBody> getUserInfoDefault(@Field("id") String id);
 
     @POST("post/getUser")//Retrofit 会把ID转换为String
     Call<Leo> getUserInfoWithBody(@Body Id id);
