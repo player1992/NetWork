@@ -467,7 +467,239 @@ private void promoteCalls() {
 
 主要任务就是在待执行队列中取出下一个任务执行。
 
-##### > 连接池复用机制
 
-`ConnectionPool`
 
+### 三、连接池复用机制
+
+在实例化`OkHttpCliernt`的时候同时准备好了`ConnectionPool`用
+
+#### 1.基本参数和构造
+
+```java
+//类似CachedExecutor
+private static final Executor executor = new ThreadPoolExecutor(0 /* corePoolSize */,
+    Integer.MAX_VALUE /* maximumPoolSize */, 60L /* keepAliveTime */, TimeUnit.SECONDS,
+    new SynchronousQueue<Runnable>(), Util.threadFactory("OkHttp ConnectionPool", true));
+//最大空闲的连接数量
+private final int maxIdleConnections;
+//socket的keepAlive时间
+private final long keepAliveDurationNs;
+//RealConnection的连接，利用Deque维护
+private final Deque<RealConnection> connections = new ArrayDeque<>();
+//指定上面空闲的最大时间
+public ConnectionPool() {
+    this(5, 5, TimeUnit.MINUTES);
+}
+```
+
+#### 2.网络请求的缓存
+
+缓存对应的是get和put操作
+
+先看get，遍历所有连接通过`isEligible`方法判断是否符合要求
+
+```java
+RealConnection get(Address address, StreamAllocation streamAllocation, Route route) {
+  assert (Thread.holdsLock(this));
+  for (RealConnection connection : connections) {
+    if (connection.isEligible(address, route)) {
+      streamAllocation.acquire(connection, true);
+      return connection;
+    }
+  }
+  return null;
+}
+```
+
+`isEligible`方法较长，根据不同的情形决定返回值
+
+连接次数达到上限的时候返回false                                                                                                                                                                                                                                                                                                                                                   
+
+在URL的host完全匹配的时候会返回true
+
+certificatePinner匹配成功的时候会返回true
+
+```java
+public boolean isEligible(Address address, @Nullable Route route) {
+  // If this connection is not accepting new streams, we're done.
+  if (allocations.size() >= allocationLimit || noNewStreams) return false;
+
+  // If the non-host fields of the address don't overlap, we're done.
+  if (!Internal.instance.equalsNonHost(this.route.address(), address)) return false;
+
+  // If the host exactly matches, we're done: this connection can carry the address.
+  if (address.url().host().equals(this.route().address().url().host())) {
+    return true; // This connection is a perfect match.
+  }
+
+  // 1. This connection must be HTTP/2.
+  if (http2Connection == null) return false;
+
+  // 2. The routes must share an IP address. This requires us to have a DNS address for both
+  // hosts, which only happens after route planning. We can't coalesce connections that use a
+  // proxy, since proxies don't tell us the origin server's IP address.
+  if (route == null) return false;
+  if (route.proxy().type() != Proxy.Type.DIRECT) return false;
+  if (this.route.proxy().type() != Proxy.Type.DIRECT) return false;
+  if (!this.route.socketAddress().equals(route.socketAddress())) return false;
+
+  // 3. This connection's server certificate's must cover the new host.
+  if (route.address().hostnameVerifier() != OkHostnameVerifier.INSTANCE) return false;
+  if (!supportsUrl(address.url())) return false;
+
+  // 4. Certificate pinning must match the host.
+  try {
+    address.certificatePinner().check(address.url().host(), handshake().peerCertificates());
+  } catch (SSLPeerUnverifiedException e) {
+    return false;
+  }
+  return true;
+}
+```
+
+然后是put操作，对应的会有一个cleanupRunnable的执行过程。
+
+```java
+void put(RealConnection connection) {
+  assert (Thread.holdsLock(this));
+  if (!cleanupRunning) {
+    cleanupRunning = true;
+    executor.execute(cleanupRunnable);
+  }
+  connections.add(connection);
+}
+```
+
+#### 3.回收连接
+
+在put操作的时候首先会执行一个cleanupRunnable
+
+```java
+private final Runnable cleanupRunnable = new Runnable() {
+  @Override public void run() {
+    while (true) {
+      long waitNanos = cleanup(System.nanoTime());
+      if (waitNanos == -1) return;
+      if (waitNanos > 0) {
+        long waitMillis = waitNanos / 1000000L;
+        waitNanos -= (waitMillis * 1000000L);
+        synchronized (ConnectionPool.this) {
+          try {
+            ConnectionPool.this.wait(waitMillis, (int) waitNanos);
+          } catch (InterruptedException ignored) {
+          }
+        }
+      }
+    }
+  }
+};
+```
+
+这是一个定时任务，执行完cleanup之后，返回下次需要清理的时间，继续循环下去。
+
+
+
+```java
+long cleanup(long now) {
+  int inUseConnectionCount = 0;
+  int idleConnectionCount = 0;
+  RealConnection longestIdleConnection = null;
+  long longestIdleDurationNs = Long.MIN_VALUE;
+
+  // Find either a connection to evict, or the time that the next eviction is due.
+  synchronized (this) {
+    for (Iterator<RealConnection> i = connections.iterator(); i.hasNext(); ) {
+      RealConnection connection = i.next();
+		  //正在使用的连接是不做处理的
+      if (pruneAndGetAllocationCount(connection, now) > 0) {
+        inUseConnectionCount++;
+        continue;
+      }
+      idleConnectionCount++;
+      long idleDurationNs = now - connection.idleAtNanos;
+      if (idleDurationNs > longestIdleDurationNs) {
+        longestIdleDurationNs = idleDurationNs;
+        longestIdleConnection = connection;
+      }
+    }
+    if (longestIdleDurationNs >= this.keepAliveDurationNs
+        || idleConnectionCount > this.maxIdleConnections) {
+			//删除空闲超时的连接
+      connections.remove(longestIdleConnection);
+    } else if (idleConnectionCount > 0) {
+      return keepAliveDurationNs - longestIdleDurationNs;
+    } else if (inUseConnectionCount > 0) {
+      return keepAliveDurationNs;
+    } else {
+      cleanupRunning = false;
+      return -1;
+    }
+  }
+	......
+  return 0;
+}
+```
+
+`pruneAndGetAllocationCount`方法决定了连接是否正在被使用,内部使用了引用计数的方式来控制连接是否有被引用。
+
+```java
+private int pruneAndGetAllocationCount(RealConnection connection, long now) {
+  List<Reference<StreamAllocation>> references = connection.allocations;
+  for (int i = 0; i < references.size(); ) {
+    Reference<StreamAllocation> reference = references.get(i);
+    if (reference.get() != null) {
+      i++;
+      continue;
+    }
+    StreamAllocation.StreamAllocationReference streamAllocRef =
+        (StreamAllocation.StreamAllocationReference) reference;
+    references.remove(i);
+    connection.noNewStreams = true;
+    if (references.isEmpty()) {
+      connection.idleAtNanos = now - keepAliveDurationNs;
+      return 0;
+    }
+  }
+  return references.size();
+}
+```
+
+内部维护的是一个`StreamAllocation`引用集合
+
+对应的是`StreamAllocation`的`acquire`和`release`方法来增删引用
+
+```java
+public void acquire(RealConnection connection, boolean reportedAcquired) {
+  assert (Thread.holdsLock(connectionPool));
+  if (this.connection != null) throw new IllegalStateException();
+  this.connection = connection;
+  this.reportedAcquired = reportedAcquired;
+  connection.allocations.add(new StreamAllocationReference(this, callStackTrace));
+}
+```
+
+```java
+private void release(RealConnection connection) {
+  for (int i = 0, size = connection.allocations.size(); i < size; i++) {
+    Reference<StreamAllocation> reference = connection.allocations.get(i);
+    if (reference.get() == this) {
+      connection.allocations.remove(i);
+      return;
+    }
+  }
+  throw new IllegalStateException();
+}
+```
+
+acquire对应的场景就是新增一个网络请求的时候，在`ConnectionPool`的get方法中，而release对应的场景较多，比如用户cancel掉，连接失败、连接结束的时候都会release一个连接。
+
+
+
+#### 4.流程场景
+
+* 发起请求
+* 尝试去连接池获取可复用的连接
+  * 获取到就复用连接，将连接的引用计数加1
+* 获取不到就新建一个连接，并将连接添加到连接池，引用计数也加1
+
+* 请求发起之前会对连接池进行一次清理工作

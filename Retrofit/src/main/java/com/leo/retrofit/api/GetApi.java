@@ -1,5 +1,6 @@
 package com.leo.retrofit.api;
 
+import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.leo.retrofit.bean.Leo;
 import com.leo.retrofit.service.LeoServiceForGet;
@@ -22,10 +23,10 @@ import retrofit2.converter.gson.GsonConverterFactory;
  */
 public class GetApi {
 
-    private static String url ="http://10.1.133.96/leo/";
+    private static String url ="http://192.168.0.101/leo/";
+//    private static String url ="http://www.baidu.com";
 
     public static void main(String [] args){
-
         Retrofit retrofit = new Retrofit.Builder()
                 .baseUrl(url)
                 //结合Gson解析称为JSON
